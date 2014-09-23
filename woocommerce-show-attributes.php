@@ -3,7 +3,7 @@
 Plugin Name: WooCommerce Show Attributes
 Plugin URI: http://isabelcastillo.com/show-woocommerce-product-attributes/
 Description: Show WooCommerce custom product attributes on the Product page, Cart page, admin Order Details page and emails.
-Version: 1.2
+Version: 1.2.1
 Author: Isabel Castillo
 Author URI: http://isabelcastillo.com
 License: GPL2
@@ -44,6 +44,8 @@ class WooCommerce_Show_Attributes {
 		add_filter( 'woocommerce_order_item_name', array( $this, 'show_atts_on_order' ), 99, 2 );
 		add_action( 'woocommerce_admin_order_item_values', array( $this, 'show_atts_in_admin_order'), 10, 3 );
 		add_action( 'woocommerce_admin_order_item_headers', array( $this, 'admin_order_item_header' ) );
+		add_filter( 'woocommerce_product_settings', array( $this, 'add_options' ) );
+		
 	}
 
 	/**
@@ -58,8 +60,9 @@ class WooCommerce_Show_Attributes {
 	* This does not affect nor include attributes which are used for Variations.
 	* @param object, the product object.
 	* @param string, HTML element to wrap each attribute with, accepts span or li.
+	* @param boolean $visibility, whether to apply the visibility setting
 	*/
-	private function the_attributes( $product, $element ) {
+	private function the_attributes( $product, $element, $visibility = NULL ) {
 	   
 		$attributes = $product->get_attributes();
 	   
@@ -67,10 +70,17 @@ class WooCommerce_Show_Attributes {
 			return;
 		}
 
-		$out = ('li' == $element) ? '<ul ' : '<span ';
+		$hide_labels = get_option( 'woocommerce_show_attributes_hide_labels' );
+		
+		// check if they choose span element over li
+		if ( get_option( 'woocommerce_show_attributes_span' ) == 'yes' ) {
+			$element = 'span';
+		}
 
+		$out = ('li' == $element) ? '<ul ' : '<span ';
+		
 		$out .= 'class="custom-attributes">';
-	   
+		
 		foreach ( $attributes as $attribute ) {
 		
 		
@@ -79,43 +89,55 @@ class WooCommerce_Show_Attributes {
 				continue;
 			}
 				
-				
+			// If on the single product page, apply the visibility setting
+			if ( $visibility && ! $attribute['is_visible'] ) {
+				continue;
+			}
+			
 			if ( $attribute['is_taxonomy'] ) {
 				
 				$terms = wp_get_post_terms( $product->id, $attribute['name'], 'all' );
-				 
-				// get the taxonomy
-				$tax = $terms[0]->taxonomy;
-				 
-				// get the tax object
-				$tax_object = get_taxonomy($tax);
-				 
-				// get tax label
-				if ( isset ($tax_object->labels->name) ) {
-					$tax_label = $tax_object->labels->name;
-				} elseif ( isset( $tax_object->label ) ) {
-					$tax_label = $tax_object->label;
-				}
-				 
-				foreach ( $terms as $term ) {
-				
-					$out .= '<' . $element . ' class="' . esc_attr( $attribute['name'] ) . ' ' . esc_attr( $term->slug ) . '">';
-					$out .= '<span class="attribute-label">' . $tax_label . ': </span> ';
-					$out .= '<span class="attribute-value">' . $term->name . '</span></' . $element . '>';
-
-					if ('span' == $element) {
-						$out .= '<br />';
+				if ( ! empty( $terms ) ) {
+					if ( ! is_wp_error( $terms ) ) {
+	
+						// get the taxonomy
+						$tax = $terms[0]->taxonomy;
+						 
+						// get the tax object
+						$tax_object = get_taxonomy($tax);
+						 
+						// get tax label
+						if ( isset ($tax_object->labels->name) ) {
+							$tax_label = $tax_object->labels->name;
+						} elseif ( isset( $tax_object->label ) ) {
+							$tax_label = $tax_object->label;
+						}
+						 
+						foreach ( $terms as $term ) {
+						
+							$out .= '<' . $element . ' class="' . esc_attr( $attribute['name'] ) . ' ' . esc_attr( $term->slug ) . '">';
+							// Hide labels if they want to
+							if ( 'no' == $hide_labels ) {
+								$out .= '<span class="attribute-label">' . $tax_label . ': </span> ';
+							}
+							$out .= '<span class="attribute-value">' . $term->name . '</span></' . $element . '>';
+							if ('span' == $element) {
+								$out .= '<br />';
+							}
+						  
+						}
 					}
-
-					  
 				}
 				   
 			} else {
 			
 				$out .= '<' . $element. ' class="' . sanitize_title($attribute['name']) . ' ' . sanitize_title($attribute['value']) . '">';
-				$out .= '<span class="attribute-label">' . $attribute['name'] . ': </span> ';
+				
+				// Hide labels if they want to
+				if ( 'no' == $hide_labels ) {
+					$out .= '<span class="attribute-label">' . $attribute['name'] . ': </span> ';
+				}
 				$out .= '<span class="attribute-value">' . $attribute['value'] . '</span></' . $element. '>';
-
 				if ('span' == $element) {
 					$out .= '<br />';
 				}
@@ -123,6 +145,11 @@ class WooCommerce_Show_Attributes {
 			}
 		}
 		$out .= ('li' == $element) ? '</ul>' : '</span>';
+		
+		if ('span' == $element) {
+			$out .= '<br />';
+		}
+
 		return $out;
 	}
 	
@@ -133,7 +160,7 @@ class WooCommerce_Show_Attributes {
 
 	public function show_atts_on_product_page() {
 		global $product;
-		echo $this->the_attributes( $product, 'li' );
+		echo $this->the_attributes( $product, 'li', true );
 	}
 
 	/**
@@ -167,7 +194,7 @@ class WooCommerce_Show_Attributes {
 	* @param integer, product id
 	*/
 	public function show_atts_in_admin_order( $product, $item, $item_id ) {
-		echo '<td><div class="view">' . $this->the_attributes( $product, 'span' ) . '</div></td>';
+			echo '<td><div class="view">' . $this->the_attributes( $product, 'span' ) . '</div></td>';
 	}
 
 	/**
@@ -272,6 +299,39 @@ class WooCommerce_Show_Attributes {
 		}
 		return $tabs;
 	}
+	
+	/*
+	* Add the option to WooCommerce products tab
+	*/
+	public function add_options( $settings ) {
+		$updated_settings = array();
+		foreach ( $settings as $section ) {
+		
+			// under the Product Data Options
+			if ( isset( $section['id'] ) &&  isset( $section['type'] ) ) {
+			
+				if ( 'product_data_options' == $section['id'] && 'sectionend' == $section['type'] ) {
+					$updated_settings[] = array(
+						'name' => __( 'Hide the Labels When Showing Product Attributes', 'woocommerce-show-attributes' ),
+						'id' => 'woocommerce_show_attributes_hide_labels',
+						'default' => 'no',
+						'type' => 'checkbox',
+						'desc' => __( 'Check this box to hide the attribute labels only show the attribute values.', 'woocommerce-show-attributes' )
+					);
+					$updated_settings[] = array(
+						'name' => __( 'Show Attributes in a span Element', 'woocommerce-show-attributes' ),
+						'id' => 'woocommerce_show_attributes_span',
+						'default' => 'no',
+						'type' => 'checkbox',
+						'desc' => __( 'Check this box to use a span element instead of list bullets when showing product attributes on the single product page.', 'woocommerce-show-attributes' )
+					);
+				}
+			}
+			$updated_settings[] = $section;
+		}
+		return $updated_settings;
+	}
+	
 }
 // only if WooCommerce is active
 if ( in_array( 'woocommerce/woocommerce.php', apply_filters( 'active_plugins', get_option( 'active_plugins' ) ) ) ) {
