@@ -4,7 +4,7 @@ Donate link: https://www.paypal.com/cgi-bin/webscr?cmd=_donations&business=me%40
 Tags: custom product attributes, woocommerce product attributes, product attributes, custom attributes, woocommerce custom product attributes
 Requires at least: 3.8
 Tested up to: 4.0
-Stable tag: 1.2.3
+Stable tag: 1.2.4
 License: GNU Version 2 or Any Later Version
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -37,7 +37,11 @@ Fork it [on Github](https://github.com/isabelc/WooCommerce-Show-Attributes).
 
 3.  Click "Activate" to activate the plugin.
 
-4.  Now your product attributes will be displayed in all the places described in the plugin description.
+4. For each attribute that you want to display, you must check the box for “Visible on the product page.” This has to be checked for the attributes to appear on the single product page and Shop page.
+
+This is a WooCommerce native option and is found on the Edit Product page, under the individual attribute settings.
+
+If you uncheck that box, the attribute will not be shown on the single product page or Shop page. However, it will still show up on the rest of the places as described in the plugin description.
 
 5.  Optional settings are at WooCommerce Settings -> Product tab, under "Product Data".
 
@@ -95,6 +99,9 @@ Add this CSS:
 3. The attributes under the product name on the Customer's Order Details page on the front end.
 
 == Changelog ==
+
+= 1.2.4 =
+* New - Show the attributes also on the Grouped product page, for each child product in the Grouped product.
 
 = 1.2.3 =
 * New - Option to show the attributes on the shop pages, which also includes the product category and tag archives.
