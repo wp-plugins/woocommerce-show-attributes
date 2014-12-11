@@ -3,8 +3,8 @@ Contributors: isabel104
 Donate link: https://www.paypal.com/cgi-bin/webscr?cmd=_donations&business=me%40isabelcastillo%2ecom
 Tags: custom product attributes, woocommerce product attributes, product attributes, custom attributes, woocommerce custom product attributes
 Requires at least: 3.8
-Tested up to: 4.0
-Stable tag: 1.2.5
+Tested up to: 4.0.1
+Stable tag: 1.3
 License: GNU Version 2 or Any Later Version
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -24,6 +24,7 @@ The custom product product attributes will **also** be displayed on:
 * Order Complete email that goes to the customer
 * Optional: Shop page (including product category and tag archives)
 
+Includes a .pot localization file to make this plugin WPML-ready.
 
 See the [documentation](http://isabelcastillo.com/docs/category/woocommerce-show-attributes).
 
@@ -99,6 +100,10 @@ Add this CSS:
 3. The attributes under the product name on the Customer's Order Details page on the front end.
 
 == Changelog ==
+
+= 1.3 =
+* Fix - Removed an error that caused installation to fail.
+* New - Added a .pot localization file to make the plugin WPML ready.
 
 = 1.2.5=
 * Fix - Fixed a fatal error on the admin Edit Order page, above the item details. Please update.
