@@ -3,14 +3,14 @@
 Plugin Name: WooCommerce Show Attributes
 Plugin URI: http://isabelcastillo.com/docs/category/woocommerce-show-attributes
 Description: Show WooCommerce custom product attributes on the Product, Shop and Cart pages, admin Order Details page and emails.
-Version: 1.3.1
+Version: 1.4.0
 Author: Isabel Castillo
 Author URI: http://isabelcastillo.com
 License: GPL2
 Text Domain: woocommerce-show-attributes
 Domain Path: languages
 
-Copyright 2015 Isabel Castillo
+Copyright 2014 - 2015 Isabel Castillo
 
 WooCommerce Show Attributes is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2, as
@@ -39,16 +39,18 @@ class WooCommerce_Show_Attributes {
 
 	private function __construct() {
 		add_action( 'plugins_loaded', array( $this, 'load_textdomain' ) );
-		add_action('woocommerce_single_product_summary', array( $this, 'show_atts_on_product_page' ), 25);
+		add_action( 'woocommerce_single_product_summary', array( $this, 'show_atts_on_product_page' ), 25);
 		add_filter( 'woocommerce_product_tabs', array( $this, 'additional_info_tab' ), 98 );
 		add_filter( 'woocommerce_cart_item_name', array( $this, 'show_atts_on_cart' ), 10, 2 );
-		add_filter( 'woocommerce_order_item_name', array( $this, 'show_atts_on_order' ), 99, 2 );
+		add_filter( 'woocommerce_order_item_name', array( $this, 'show_atts_on_customer_order' ), 99, 2 );
+		add_filter( 'woocommerce_order_item_name', array( $this, 'show_admin_new_order_email' ), 99, 2 );
 		add_action( 'woocommerce_admin_order_item_values', array( $this, 'show_atts_in_admin_order'), 10, 3 );
 		add_action( 'woocommerce_admin_order_item_headers', array( $this, 'admin_order_item_header' ) );
-		add_filter( 'woocommerce_product_settings', array( $this, 'add_options' ) );
+		add_filter( 'woocommerce_get_settings_products', array( $this, 'all_settings' ), 10, 2 );
+		add_filter( 'woocommerce_get_sections_products', array( $this, 'add_section' ) );
 		add_action( 'init', array( $this, 'if_show_atts_on_shop' ) );
 		add_action( 'woocommerce_grouped_product_list_before_price', array( $this, 'show_atts_grouped_product' ) );
-
+	
 	}
 
 	/**
@@ -58,16 +60,36 @@ class WooCommerce_Show_Attributes {
 		load_plugin_textdomain( 'woocommerce-show-attributes', false, dirname( plugin_basename( __FILE__ ) ) . '/languages/' );
 	}
 	
-	/*
+	/**
+	* Show the attributes.
+	* 
 	* Returns the HTML string for the custom product attributes.
 	* This does not affect nor include attributes which are used for Variations.
-	* @param object, the product object.
-	* @param string, HTML element to wrap each attribute with, accepts span or li.
-	* @param boolean $visibility, whether to apply the visibility setting
-	* @param string , the location which function is called from
+	* 
+	* @param object $product The product object.
+	* @param string $element HTML element to wrap each attribute with, accepts span or li.
+	* @param boolean $show_weight whether to show the product weight
+	* @param booleam $show_dimensions whether to show the product dimensions
 	*/
-	private function the_attributes( $product, $element, $visibility = NULL, $location = NULL ) {
+	public function the_attributes( $product, $element, $show_weight = null, $show_dimensions = null ) {
+
+		if ( $show_weight ) {
+			// get weight
+			if ( $product->has_weight() ) {
+				$weight = $product->get_weight();
+				$unit = esc_attr( get_option( 'woocommerce_weight_unit' ) );
+			}
+		}
+
+		if ( $show_dimensions ) {
+			// get dimensions
+			if ( $product->has_dimensions() ) {
+				$dimensions = $product->get_dimensions();
+			}
+		}
 	   
+   		$semicolon = get_option( 'wcsa_remove_semicolon' ) == 'yes' ? ' ' : ' : ';
+
 		$attributes = $product->get_attributes();
 	   
 		if ( ! $attributes ) {
@@ -81,32 +103,22 @@ class WooCommerce_Show_Attributes {
 			$element = 'span';
 		}
 
-		// if we are on shop page, check if option to show atts on shop is enabled.
-
-		if ( 'shop' == $location ) {
-
-			if ( ! get_option( 'woocommerce_show_attributes_on_shop' ) ) {
-				return;
-			}
-		}
-
 		$out = ('li' == $element) ? '<ul ' : '<span ';
 		
 		$out .= 'class="custom-attributes">';
 		
 		foreach ( $attributes as $attribute ) {
 		
-		
 			// skip variations
 			if ( $attribute['is_variation'] ) {
 				continue;
 			}
 				
-			// If on the single product, apply the visibility setting
-			if ( $visibility && ! $attribute['is_visible'] ) {
+			// honor the visibility setting
+			if ( ! $attribute['is_visible'] ) {
 				continue;
 			}
-			
+
 			if ( $attribute['is_taxonomy'] ) {
 				
 				$terms = wp_get_post_terms( $product->id, $attribute['name'], 'all' );
@@ -131,7 +143,7 @@ class WooCommerce_Show_Attributes {
 							$out .= '<' . $element . ' class="' . esc_attr( $attribute['name'] ) . ' ' . esc_attr( $term->slug ) . '">';
 							// Hide labels if they want to
 							if ( $hide_labels != 'yes' ) {
-								$out .= '<span class="attribute-label">' . sprintf( __( '%s', 'woocommerce-show-attributes' ), $tax_label ) . ': </span> ';
+								$out .= '<span class="attribute-label">' . sprintf( __( '%s', 'woocommerce-show-attributes' ), $tax_label ) . $semicolon . ' </span> ';
 							}
 							$out .= '<span class="attribute-value">' . $term->name . '</span></' . $element . '>';
 							if ('span' == $element) {
@@ -148,7 +160,7 @@ class WooCommerce_Show_Attributes {
 				
 				// Hide labels if they want to
 				if ( $hide_labels != 'yes' ) {
-					$out .= '<span class="attribute-label">' . $attribute['name'] . ': </span> ';
+					$out .= '<span class="attribute-label">' . $attribute['name'] . $semicolon . ' </span> ';
 				}
 				$out .= '<span class="attribute-value">' . $attribute['value'] . '</span></' . $element. '>';
 				if ('span' == $element) {
@@ -156,7 +168,38 @@ class WooCommerce_Show_Attributes {
 				}
 
 			}
+
+		} // ends foreach attribute
+
+		// add weight and dimensions if they opted in
+
+		if ( ! empty( $weight ) ) {
+			$unit = empty( $unit ) ? '' : $unit;
+			// weight
+			$out .= '<' . $element. ' class="show-attributes-weight">';
+			// Hide labels if they want to
+			if ( $hide_labels != 'yes' ) {
+				$out .= '<span class="attribute-label">' . __( 'Weight', 'woocommerce-show-attributes' ) . $semicolon . ' </span> ';
+			}
+			$out .= '<span class="attribute-value">' . $weight . ' ' . $unit . ' </span></' . $element. '>';
+			if ('span' == $element) {
+				$out .= '<br />';
+			}
 		}
+
+		if ( ! empty( $dimensions ) ) {
+			// dimensions
+			$out .= '<' . $element. ' class="show-attributes-dimensions">';
+			// Hide labels if they want to
+			if ( $hide_labels != 'yes' ) {
+				$out .= '<span class="attribute-label">' . __( 'Dimensions', 'woocommerce-show-attributes' ) . $semicolon . ' </span> ';
+			}
+			$out .= '<span class="attribute-value">' . $dimensions . '</span></' . $element. '>';
+			if ('span' == $element) {
+				$out .= '<br />';
+			}
+		}
+
 		$out .= ('li' == $element) ? '</ul>' : '</span>';
 		
 		if ('span' == $element) {
@@ -165,27 +208,94 @@ class WooCommerce_Show_Attributes {
 
 		return $out;
 	}
-	
 
 	/**
-	* Show product attributes above the Add to Cart button on the single product page.
+	* Show product attributes on the product page.
+	*
+	* Show product attributes above the Add to Cart button on the single product page
+	* and on the Parent of Grouped products.
 	*/
 
 	public function show_atts_on_product_page() {
-		global $product;
-		echo $this->the_attributes( $product, 'li', true );
+
+		$show_weight = null;
+		if ( get_option( 'wcsa_weight_product' ) == 'yes' ) {
+			$show_weight = true;
+		}
+
+		$show_dimensions = null;
+		if ( get_option( 'wcsa_dimensions_product' ) == 'yes' ) {
+			$show_dimensions = true;
+		}		
+
+		if ( get_option( 'wcsa_product' ) != 'no') {
+			global $product;
+			echo $this->the_attributes( $product, 'li', $show_weight, $show_dimensions );
+		}
 	}
 
 	/**
+	* Show attributes on Customer emails and View Order page.
+	* 
 	* Show product attributes below the item on the View Order page, 
-	* and on New Order email that goes to admin,
-	* and on Order Processing and Order Complete emails that go to customer.
+	* and on Order emails that go to customer.
+	*
+	* @param string $item_name the product title
+	* @param object $item the product object
+	* @since 1.4.0
 	*/
-	public function show_atts_on_order( $item_name, $item ) {
-	
-		$product = get_product( $item['product_id'] );
-		$out = $item_name . '<br />' . $this->the_attributes( $product, 'span' ) . '<br />';
+	public function show_atts_on_customer_order( $item_name, $item ) {
 
+		$show_weight = null;
+		if ( get_option( 'wcsa_weight_customer_order_emails' ) == 'yes' ) {
+			$show_weight = true;
+		}
+		$show_dimensions = null;
+		if ( get_option( 'wcsa_dimensions_customer_order_emails' ) == 'yes' ) {
+			$show_dimensions = true;
+		}
+
+		$out = $item_name;
+
+		if ( get_option( 'wcsa_customer_order_emails' ) != 'no' ) {
+
+			// get the name of templates used for this email call
+			$templates_used = array();
+			foreach ( debug_backtrace() as $called_file ) {
+				foreach ( $called_file as $index ) {
+					if ( is_array( $index ) ) { // avoid errors
+						if ( ! empty( $index[0] ) ) {
+							if ( is_string( $index[0] ) ) { // eliminate long arrays
+								$templates_used[] = $index[0];
+							}
+						}
+					}
+				}
+			}
+
+			
+			// Do not add atts to admin emails
+
+			$is_customer_email = true;
+
+			foreach ( $templates_used as $template_name ) {
+
+				// check each file name for '/emails/admin-'
+				if ( strpos( $template_name, '/emails/admin-' ) !== false ) {
+
+					// admin email so do not add atts 
+					$is_customer_email = false;
+				}
+			}
+
+			// Only add atts to customer emails, and included here is the customer View Order page.
+
+			if ( $is_customer_email ) {
+				$product = get_product( $item['product_id'] );
+				$out = $item_name . '<br />' . $this->the_attributes( $product, 'span', $show_weight, $show_dimensions ) . '<br />';
+			}
+
+		}
 		return $out;
 	}
 
@@ -194,22 +304,46 @@ class WooCommerce_Show_Attributes {
 	*/
 	public function show_atts_on_cart( $cart_item, $cart_item_key ) {
 
-		$product = $cart_item_key['data'];
-		$out = $cart_item . '<br />' . $this->the_attributes( $product, 'span' );
+		$show_weight = null;
+		if ( get_option( 'wcsa_weight_cart' ) == 'yes' ) {
+			$show_weight = true;
+		}
+		$show_dimensions = null;
+		if ( get_option( 'wcsa_dimensions_cart' ) == 'yes' ) {
+			$show_dimensions = true;
+		}
+
+		$out = $cart_item;
+		if ( get_option( 'wcsa_cart' ) != 'no' ) {
+			$product = $cart_item_key['data'];
+			$out = $cart_item . '<br />' . $this->the_attributes( $product, 'span', $show_weight, $show_dimensions );
+		}
 		return $out;
 	
 	}
 
 	/**
-	* Show product attributes in the admin Order Details page.
+	* Show product attributes on the admin Order Details page.
+	* 
 	* @param object, the product object
 	* @param $item
 	* @param integer, product id
 	*/
 	public function show_atts_in_admin_order( $product, $item, $item_id ) {
 
-		if ( is_object($product) ) {
-			echo '<td><div class="view">' . $this->the_attributes( $product, 'span' ) . '</div></td>';
+		$show_weight = null;
+		if ( get_option( 'wcsa_weight_admin_order_details' ) == 'yes' ) {
+			$show_weight = true;
+		}
+		$show_dimensions = null;
+		if ( get_option( 'wcsa_dimensions_admin_order_details' ) == 'yes' ) {
+			$show_dimensions = true;
+		}
+
+		if ( get_option( 'wcsa_admin_order_details' ) != 'no' ) {
+			if ( is_object($product) ) {
+				echo '<td><div class="view">' . $this->the_attributes( $product, 'span', $show_weight, $show_dimensions ) . '</div></td>';
+			}
 		}
 	}
 
@@ -217,17 +351,32 @@ class WooCommerce_Show_Attributes {
 	* Add Attributes to the Order Items header on the admin Order Details page.
 	*/
 	public function admin_order_item_header() {
-		echo '<th class="wsa-custom-attributes">' . __( 'Attributes', 'woocommerce-show-attributes' ) . '</th>';
+
+		if ( get_option( 'wcsa_admin_order_details' ) != 'no' ) {
+
+			echo '<th class="wsa-custom-attributes">' . __( 'Attributes', 'woocommerce-show-attributes' ) . '</th>';
+		}
 	}
 	
 	/**
-	* Show product attributes on the Grouped Product page.
+	* Show product attributes on the child products of a Grouped Product page.
+	*
 	* @param object, the product object
 	* @since 1.2.4
 	*/
 	public function show_atts_grouped_product( $product ) {
 
-		echo '<td class="grouped-product-custom-attributes">' . $this->the_attributes( $product, 'span' ) . '</td>';
+		$show_weight = null;
+		if ( get_option( 'wcsa_weight_product' ) == 'yes' ) {
+			$show_weight = true;
+		}
+		$show_dimensions = null;
+		if ( get_option( 'wcsa_dimensions_product' ) == 'yes' ) {
+			$show_dimensions = true;
+		}
+		if ( get_option( 'wcsa_product' ) != 'no') {
+			echo '<td class="grouped-product-custom-attributes">' . $this->the_attributes( $product, 'span', $show_weight, $show_dimensions ) . '</td>';
+		}
 	}
 
 	/**
@@ -235,10 +384,8 @@ class WooCommerce_Show_Attributes {
 	 * @since 1.2.3
 	 */
 	public function show_atts_on_shop() {
-
-		global $product;
-		echo $this->the_attributes( $product, 'li', true, 'shop' );
-
+			global $product;
+			echo $this->the_attributes( $product, 'li' );
 	}
 
 	/**
@@ -264,7 +411,6 @@ class WooCommerce_Show_Attributes {
 	*/
 	public function additional_info_tab( $tabs ) {
 		global $product;
-		// if has attributes
 		if( $product->has_attributes() ) {
 		
 			// check if any of the attributes are variations
@@ -272,7 +418,6 @@ class WooCommerce_Show_Attributes {
 			$need_tab = array();
 			foreach ( $attributes as $attribute ) {
 				$need_tab[] = empty($attribute['is_variation']) ? '' : 1;
-				
 				
 			}
 
@@ -284,76 +429,310 @@ class WooCommerce_Show_Attributes {
 				if ( ! $product->has_dimensions() && ! $product->has_weight() ) {
 					unset( $tabs['additional_information'] );
 
+				// if dimensions and weight have both been moved up by option, unset the tab
+				} elseif ( get_option( 'wcsa_weight_product' ) == 'yes' && get_option( 'wcsa_dimensions_product' ) == 'yes' ) {
+						unset( $tabs['additional_information'] );
 				} else {
+					// we have to show weight and/or height so do tab
 					$tabs['additional_information']['callback'] = 'additional_info_tab_content';
 				}
 			} else {
-				// we have variations so do tab Callback
+
+				// we have variations so do tab
 				$tabs['additional_information']['callback'] = 'additional_info_tab_content';
 			}
-		} else {	// we have no attributes
+		} else {	
+
+			// we have no attributes
 			if ( $product->has_dimensions() || $product->has_weight() ) {
-				$tabs['additional_information']['callback'] = 'additional_info_tab_content';
+
+				if ( get_option( 'wcsa_weight_product' ) == 'yes' && get_option( 'wcsa_dimensions_product' ) == 'yes' ) {
+					// weight and dimensions have been moved up so unset tab
+					unset( $tabs['additional_information'] );
+				} else {
+					// we have to show weight and/or height so do tab
+					$tabs['additional_information']['callback'] = 'additional_info_tab_content';
+				}
+
 			}
 		}
 		return $tabs;
 	}
 	
-	/*
-	* Add the options to WooCommerce products tab
-	*/
-	public function add_options( $settings ) {
+	/** 
+	 * Add settings to the WC Show Attributes section.
+	 * @since 1.4.0
+	 */
+	
+	public function all_settings( $settings, $current_section ) {
 
-		$updated_settings = array();
-		foreach ( $settings as $section ) {
+		/**
+		 * Check the current section is what we want
+		 **/
+
+		if ( $current_section == 'wc_show_attributes' ) {
+
+			$settings_wsa = array(
+
+			array(
+				'name'	=> __( 'WooCommerce Show Attributes Options', 'woocommerce-show-attributes' ),
+				'type'	=> 'title',
+				'desc'	=> __( 'Where would you like to show your custom product attributes?', 'woocommerce-show-attributes' ),
+				'id'	=> 'wc_show_attributes' ),
+			array(
+				'name'		=> __( 'Show Attributes on Product Page', 'woocommerce-show-attributes' ),
+				'id'		=> 'wcsa_product',
+				'default'	=> 'yes',
+				'type'		=> 'checkbox',
+				'desc'		=> __( 'Show attributes on the single product above Add To Cart, and on Grouped products.', 'woocommerce-show-attributes' )
+				),
+			array(
+				'name'		=> __( 'Show Attributes on Shop Pages', 'woocommerce-show-attributes' ),
+				'desc'		=> __( 'Whether to show attributes on the main shop page and shop category pages.', 'woocommerce-show-attributes' ),
+				'id'		=> 'woocommerce_show_attributes_on_shop',
+				'css'		=> '',
+				'default'	=> 'no',
+				'type'		=> 'select',
+				'options'	=> array(
+						''					=> __( 'No', 'woocommerce-show-attributes' ),
+						'above_price'		=> __( 'Show them above the price', 'woocommerce-show-attributes' ),
+						'above_add2cart'	=> __( 'Show them above "Add to Cart"', 'woocommerce-show-attributes' ),
+				),
+				'desc_tip'	=> true,
+				),
+			array(
+				'name'		=> __( 'Show Attributes on Cart Page', 'woocommerce-show-attributes' ),
+				'id'		=> 'wcsa_cart',
+				'default'	=> 'yes',
+				'type'		=> 'checkbox',
+				'desc'		=> __( 'Show attributes on the cart and checkout pages.', 'woocommerce-show-attributes' )
+				),
+			array(
+				'name'		=> __( 'Show Attributes on Customer Order Emails', 'woocommerce-show-attributes' ),
+				'id'		=> 'wcsa_customer_order_emails',
+				'default'	=> 'yes',
+				'type'		=> 'checkbox',
+				'desc'		=> __( 'Show attributes on customer order, invoice, and receipt emails, and on the customer\'s View Order page.', 'woocommerce-show-attributes' )
+				),
+			array(
+				'name'		=> __( 'Show Attributes on Admin New Order Email', 'woocommerce-show-attributes' ),
+				'id'		=> 'wcsa_admin_email',
+				'default'	=> 'yes',
+				'type'		=> 'checkbox',
+				'desc'		=> __( 'Show attributes on the New Order email which goes to the Administrator.', 'woocommerce-show-attributes' )
+				),
+			array(
+				'name'		=> __( 'Show Attributes on Admin Order Details Page', 'woocommerce-show-attributes' ),
+				'id'		=> 'wcsa_admin_order_details',
+				'default'	=> 'yes',
+				'type'		=> 'checkbox',
+				'desc'		=> __( 'Show attributes on the Order Details page on the back end, listed under "Order Items".', 'woocommerce-show-attributes' )
+				),
+			array( 'type' => 'sectionend', 'id' => 'wc_show_attributes' ),
+			// style
+			array(
+				'title'		=> __( 'Style Options', 'woocommerce-show-attributes' ),
+				'desc'		=> __( 'These options affect the style or appearance of the attributes.', 'woocommerce-show-attributes' ),
+				'type'		=> 'title',
+				'id'		=> 'wcsa_style'
+				),
+			array(
+				'name'		=> __( 'Hide the Labels When Showing Product Attributes', 'woocommerce-show-attributes' ),
+				'id'		=> 'woocommerce_show_attributes_hide_labels',
+				'default'	=> 'no',
+				'type'		=> 'checkbox',
+				'desc'		=> __( 'Check this box to hide the attribute labels and only show the attribute values.', 'woocommerce-show-attributes' )
+				),
+			array(
+				'name'		=> __( 'Show Attributes in a span Element', 'woocommerce-show-attributes' ),
+				'id'		=> 'woocommerce_show_attributes_span',
+				'default'	=> 'no',
+				'type'		=> 'checkbox',
+				'desc'		=> __( 'Check this box to use a span element instead of list bullets when showing product attributes on the single product page.', 'woocommerce-show-attributes' )
+				),
+			array(
+				'name'		=> __( 'Remove Semicolon From Attribute Labels', 'woocommerce-show-attributes' ),
+				'id'		=> 'wcsa_remove_semicolon',
+				'default'	=> 'no',
+				'type'		=> 'checkbox',
+				'desc'		=> __( 'Check this box to remove the semicolon from the attribute labels. Useful for RTL languages.', 'woocommerce-show-attributes' )
+				),
+			array( 'type' => 'sectionend', 'id' => 'wcsa_style' ),
+			// weight and Dimensions
+			array(
+				'title'		=> __( 'Show Weight and Dimensions', 'woocommerce-show-attributes' ),
+				'desc'		=> __( 'These options let you show the product weight and dimensions in various places.', 'woocommerce-show-attributes' ),
+				'type'		=> 'title',
+				'id'		=> 'wc_show_weight_dimensions'
+				),
+			array(
+				'name'		=> __( 'Show Weight on Product Page Above Add To Cart', 'woocommerce-show-attributes' ),
+				'id'		=> 'wcsa_weight_product',
+				'default'	=> 'no',
+				'type'		=> 'checkbox',
+				'desc'		=> __( 'Show product weight on the single product pages, and Grouped products, above Add To Cart instead of in the Additional Information tab.', 'woocommerce-show-attributes' )
+				),
+			array(
+				'name'		=> __( 'Show Dimensions on Product Page Above Add To Cart', 'woocommerce-show-attributes' ),
+				'id'		=> 'wcsa_dimensions_product',
+				'default'	=> 'no',
+				'type'		=> 'checkbox',
+				'desc'		=> __( 'Show product dimensions on the single product pages, and Grouped products, above Add To Cart instead of in the Additional Information tab.', 'woocommerce-show-attributes' )
+				),
+			array(
+				'name'		=> __( 'Show Weight on Cart Page', 'woocommerce-show-attributes' ),
+				'id'		=> 'wcsa_weight_cart',
+				'default'	=> 'no',
+				'type'		=> 'checkbox',
+				'desc'		=> __( 'Show product weight on the cart and checkout pages.', 'woocommerce-show-attributes' )
+				),
+			array(
+				'name'		=> __( 'Show Dimensions on Cart Page', 'woocommerce-show-attributes' ),
+				'id'		=> 'wcsa_dimensions_cart',
+				'default'	=> 'no',
+				'type'		=> 'checkbox',
+				'desc'		=> __( 'Show product dimensions on the cart and checkout pages.', 'woocommerce-show-attributes' )
+				),
+			array(
+				'name'		=> __( 'Show Weight on Customer Order Emails', 'woocommerce-show-attributes' ),
+				'id'		=> 'wcsa_weight_customer_order_emails',
+				'default'	=> 'no',
+				'type'		=> 'checkbox',
+				'desc'		=> __( 'Show product weight on customer order, invoice, and receipt emails, and on the customer\'s View Order page.', 'woocommerce-show-attributes' )
+				),
+			array(
+				'name'		=> __( 'Show Dimensions on Customer Order Emails', 'wooc			array(ommerce-show-attributes' ),
+				'id'		=> 'wcsa_dimensions_customer_order_emails',
+				'default'	=> 'no',
+				'type'		=> 'checkbox',
+				'desc'		=> __( 'Show product dimensions on customer order, invoice, and receipt emails, and on the customer\'s View Order page.', 'woocommerce-show-attributes' )
+				),
+			array(
+				'name'		=> __( 'Show Weight on Admin New Order Email', 'woocommerce-show-attributes' ),
+				'id'		=> 'wcsa_weight_admin_email',
+				'default'	=> 'no',
+				'type'		=> 'checkbox',
+				'desc'		=> __( 'Show product weight on the New Order email which goes to the Administrator.', 'woocommerce-show-attributes' )
+				),
+			array(
+				'name'		=> __( 'Show Dimensions on Admin New Order Email', 'woocommerce-show-attributes' ),
+				'id'		=> 'wcsa_dimensions_admin_email',
+				'default'	=> 'no',
+				'type'		=> 'checkbox',
+				'desc'		=> __( 'Show product dimensions on the New Order email which goes to the Administrator.', 'woocommerce-show-attributes' )
+				),
+			array(
+				'name'		=> __( 'Show Weight on Admin Order Details Page', 'woocommerce-show-attributes' ),
+				'id'		=> 'wcsa_weight_admin_order_details',
+				'default'	=> 'no',
+				'type'		=> 'checkbox',
+				'desc'		=> __( 'Show product weight on the Order Details page on the back end, listed under "Order Items".', 'woocommerce-show-attributes' )
+				),
+			array(
+				'name'		=> __( 'Show Dimensions on Admin Order Details Page', 'woocommerce-show-attributes' ),
+				'id'		=> 'wcsa_dimensions_admin_order_details',
+				'default'	=> 'no',
+				'type'		=> 'checkbox',
+				'desc'		=> __( 'Show product dimensions on the Order Details page on the back end, listed under "Order Items".', 'woocommerce-show-attributes' )
+				),			
+			array( 'type' => 'sectionend', 'id' => 'wc_show_weight_dimensions' )
+			);
+
+			return $settings_wsa;
 		
-			// under the Product Data Options
-			if ( isset( $section['id'] ) &&  isset( $section['type'] ) ) {
-			
-				if ( 'product_data_options' == $section['id'] && 'sectionend' == $section['type'] ) {
-					$updated_settings[] = array(
-						'name' => __( 'Hide the Labels When Showing Product Attributes', 'woocommerce-show-attributes' ),
-						'id' => 'woocommerce_show_attributes_hide_labels',
-						'default' => 'no',
-						'type' => 'checkbox',
-						'desc' => __( 'Check this box to hide the attribute labels and only show the attribute values.', 'woocommerce-show-attributes' )
-					);
-					$updated_settings[] = array(
-						'name' => __( 'Show Attributes in a span Element', 'woocommerce-show-attributes' ),
-						'id' => 'woocommerce_show_attributes_span',
-						'default' => 'no',
-						'type' => 'checkbox',
-						'desc' => __( 'Check this box to use a span element instead of list bullets when showing product attributes on the single product page.', 'woocommerce-show-attributes' )
-					);
-					$updated_settings[] = array(
-						'name' => __( 'Show Attributes on Shop Page', 'woocommerce-show-attributes' ),
-						'desc' => __( 'Choose whether to show the product attributes on the main shop page.', 'woocommerce-show-attributes' ),
-						'id' => 'woocommerce_show_attributes_on_shop',
-						'default' => 'no',
-						'type' => 'select',
-						'options' => array(
-							'' => __( 'No', 'woocommerce-show-attributes' ),
-							'above_price' => __( 'Show them above the price', 'woocommerce-show-attributes' ),
-							'above_add2cart' => __( 'Show them above "Add to Cart"', 'woocommerce-show-attributes' ),
-						),
-						'desc_tip' => true,
+			// If not, return the standard settings
 
-					);
+		} else {
 
+			return $settings;
 
+		}
+
+	}
+
+	/**
+	 * Add our settings section under the Products tab.
+	 * @since 1.4.0
+	 */
+	public function add_section( $sections ) {
+		$sections['wc_show_attributes'] = __( 'WC Show Attributes', 'woocommerce-show-attributes' );
+		return $sections;
+	} 
+
+	/**
+	 * Show attributes on the Admin New Order email.
+	 *
+	 * Add the custom product attributes to the New Order email
+	 * which goes to the Admin.
+	 *
+	 * @param string $item_name the product title
+	 * @param object $item the product object
+	 * @since 1.4.0
+	 */
+
+	public function show_admin_new_order_email( $item_name, $item ) {
+
+		$show_weight = null;
+		if ( get_option( 'wcsa_weight_admin_email' ) == 'yes' ) {
+			$show_weight = true;
+		}
+		$show_dimensions = null;
+		if ( get_option( 'wcsa_dimensions_admin_email' ) == 'yes' ) {
+			$show_dimensions = true;
+		}
+
+		$out = $item_name;
+
+		if ( get_option( 'wcsa_admin_email' ) != 'no' ) {
+
+			// get the name of templates used for this email call
+			$templates_used = array();
+			foreach ( debug_backtrace() as $called_file ) {
+				foreach ( $called_file as $index ) {
+					if ( is_array( $index ) ) { // avoid errors
+						if ( ! empty( $index[0] ) ) {
+							if ( is_string( $index[0] ) ) { // eliminate long arrays
+								$templates_used[] = $index[0];
+							}
+						}
+					}
 				}
 			}
-			$updated_settings[] = $section;
+
+			// Only add atts to admin emails.
+
+			$is_admin_email = false;
+
+			foreach ( $templates_used as $template_name ) {
+				// check each file name for '/emails/admin-'
+				if ( strpos( $template_name, '/emails/admin-' ) !== false ) {
+
+					// Eureka! We have an admin email
+					$is_admin_email = true;
+				}
+			}
+
+			if ( $is_admin_email ) {
+
+				$product = get_product( $item['product_id'] );
+				$out = $item_name . '<br />' . $this->the_attributes( $product, 'span', $show_weight, $show_dimensions ) . '<br />';
+			}
 		}
-		return $updated_settings;
-	}
+		
+		return $out;
 	
-}
+	}
+
+
+
+	
+} // end class
+
 // only if WooCommerce is active
 if ( in_array( 'woocommerce/woocommerce.php', apply_filters( 'active_plugins', get_option( 'active_plugins' ) ) ) ) {
 
 	/**
-	* The custom output for the Additional Information tab which now excludes our custom attributes.
+	* The custom HTML for the Additional Information tab which now excludes our custom attributes.
 	*/
 	function additional_info_tab_content() { ?>
 		<h2><?php _e( 'Additional Information', 'woocommerce-show-attributes' ); ?></h2>
@@ -365,20 +744,22 @@ if ( in_array( 'woocommerce/woocommerce.php', apply_filters( 'active_plugins', g
 		$attributes = $product->get_attributes();
 
 		if ( $product->enable_dimensions_display() ) :
-			if ( $product->has_weight() ) : $has_row = true; ?>
-				<tr class="<?php if ( ( $alt = $alt * -1 ) == 1 ) echo 'alt'; ?>">
-				<th><?php _e( 'Weight', 'woocommerce-show-attributes' ) ?></th>
-				<td class="product_weight"><?php echo $product->get_weight() . ' ' . esc_attr( get_option( 'woocommerce_weight_unit' ) ); ?></td>
-				</tr>
-			<?php endif;
-
-			if ( $product->has_dimensions() ) : $has_row = true; ?>
-				<tr class="<?php if ( ( $alt = $alt * -1 ) == 1 ) echo 'alt'; ?>">
-				<th><?php _e( 'Dimensions', 'woocommerce-show-attributes' ) ?></th>
-				<td class="product_dimensions"><?php echo $product->get_dimensions(); ?></td>
-				</tr>
-			<?php endif;
-
+			if ( get_option( 'wcsa_weight_product' ) != 'yes' ) {
+				if ( $product->has_weight() ) : $has_row = true; ?>
+					<tr class="<?php if ( ( $alt = $alt * -1 ) == 1 ) echo 'alt'; ?>">
+					<th><?php _e( 'Weight', 'woocommerce-show-attributes' ) ?></th>
+					<td class="product_weight"><?php echo $product->get_weight() . ' ' . esc_attr( get_option( 'woocommerce_weight_unit' ) ); ?></td>
+					</tr>
+				<?php endif;
+			}
+			if ( get_option( 'wcsa_weight_dimensions' ) != 'yes' ) {
+				if ( $product->has_dimensions() ) : $has_row = true; ?>
+					<tr class="<?php if ( ( $alt = $alt * -1 ) == 1 ) echo 'alt'; ?>">
+					<th><?php _e( 'Dimensions', 'woocommerce-show-attributes' ) ?></th>
+					<td class="product_dimensions"><?php echo $product->get_dimensions(); ?></td>
+					</tr>
+				<?php endif;
+			}
 		endif; ?>
 		
 		<?php foreach ( $attributes as $attribute ) :
@@ -408,7 +789,8 @@ if ( in_array( 'woocommerce/woocommerce.php', apply_filters( 'active_plugins', g
 		<?php endforeach; ?>
 		</table>
 	<?php 
-	} // end additional_info_tab_content()
+	}
 
 	$WooCommerce_Show_Attributes = WooCommerce_Show_Attributes::get_instance();
+
 }
